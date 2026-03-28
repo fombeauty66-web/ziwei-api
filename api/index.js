@@ -1,38 +1,39 @@
-// 使用 CommonJS 模式的最稳妥读取方式
+// 1. 放弃解构赋值，先拿到整个大库
 const lunar = require('lunar-javascript');
 
 module.exports = async (req, res) => {
-  // 设置跨域和编码
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   try {
     const { date, school } = req.query;
     
-    // 1. 处理日期：如果没传则默认今天，补全时间
+    // 2. 补全日期格式
     let dateStr = date || '2026-03-28';
     if (dateStr.length <= 10) dateStr += ' 12:00:00';
     const finalDate = dateStr.replace('T', ' ').replace(/\+/g, ' ');
     
-    // 2. 核心历法计算 (从大对象中精准抓取函数)
-    const solar = lunar.Solar.fromDate(new Date(finalDate));
+    // 3. 分步调用 (这是最稳的操作)
+    const d = new Date(finalDate);
+    const solar = lunar.Solar.fromDate(d);
     const currentLunar = solar.getLunar();
 
-    // 3. 设置流派 (0全书, 1中州, 2占验, 3常规)
+    // 4. 设置流派
     let sihuaType = 3; 
     if (school === 'zhongzhou') sihuaType = 1;
     if (school === 'quanshu') sihuaType = 0;
     
-    // 在 CommonJS 模式下设置四化流派
-    if (lunar.ZiWeiSiHua) {
-        lunar.ZiWeiSiHua.TYPE = sihuaType;
+    // 核心修正：lunar-javascript 内部类的正确访问路径
+    const ZiWeiSiHua = lunar.ZiWeiSiHua;
+    if (ZiWeiSiHua) {
+        ZiWeiSiHua.TYPE = sihuaType;
     }
 
-    // 4. 排盘 (使用精准的库路径)
-    const iZhiWei = lunar.Iziwei.fromLunar(currentLunar);
+    // 5. 排盘逻辑：改用更底层的 IZiWei (注意大小写)
+    const IZiWei = lunar.IZiWei || lunar.Iziwei;
+    const iZhiWei = IZiWei.fromLunar(currentLunar);
     const palaces = iZhiWei.getPalaces();
 
-    // 5. 封装结果
     const result = {
       info: {
         bazi: currentLunar.getEightChar().toString(),
@@ -52,8 +53,9 @@ module.exports = async (req, res) => {
     return res.status(200).json(result);
   } catch (e) {
     return res.status(500).json({ 
-      error: "紫微大脑运行异常", 
-      detail: e.message 
+      error: "最终调试阶段报错", 
+      detail: e.message,
+      stack: e.stack.split('\n')[0] // 只看报错第一行，方便定位
     });
   }
 };
