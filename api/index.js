@@ -1,4 +1,3 @@
-// 1. 放弃解构赋值，先拿到整个大库
 const lunar = require('lunar-javascript');
 
 module.exports = async (req, res) => {
@@ -7,32 +6,30 @@ module.exports = async (req, res) => {
 
   try {
     const { date, school } = req.query;
-    
-    // 2. 补全日期格式
     let dateStr = date || '2026-03-28';
     if (dateStr.length <= 10) dateStr += ' 12:00:00';
     const finalDate = dateStr.replace('T', ' ').replace(/\+/g, ' ');
     
-    // 3. 分步调用 (这是最稳的操作)
-    const d = new Date(finalDate);
-    const solar = lunar.Solar.fromDate(d);
+    const solar = lunar.Solar.fromDate(new Date(finalDate));
     const currentLunar = solar.getLunar();
 
-    // 4. 设置流派
-    let sihuaType = 3; 
-    if (school === 'zhongzhou') sihuaType = 1;
-    if (school === 'quanshu') sihuaType = 0;
+    // 自动寻找排盘引擎（解决大小写不一致问题）
+    const Engine = lunar.Iziwei || lunar.IZiWei || lunar.IziWei || lunar.ZiWei;
     
-    // 核心修正：lunar-javascript 内部类的正确访问路径
-    const ZiWeiSiHua = lunar.ZiWeiSiHua;
-    if (ZiWeiSiHua) {
-        ZiWeiSiHua.TYPE = sihuaType;
+    if (!Engine) {
+        throw new Error("找不到排盘引擎，请检查库版本");
     }
 
-    // 5. 排盘逻辑：改用更底层的 IZiWei (注意大小写)
-    const IZiWei = lunar.IZiWei || lunar.Iziwei;
-    const iZhiWei = IZiWei.fromLunar(currentLunar);
+    const iZhiWei = Engine.fromLunar(currentLunar);
     const palaces = iZhiWei.getPalaces();
+
+    // 流派设置
+    if (lunar.ZiWeiSiHua) {
+        let sihuaType = 3; 
+        if (school === 'zhongzhou') sihuaType = 1;
+        if (school === 'quanshu') sihuaType = 0;
+        lunar.ZiWeiSiHua.TYPE = sihuaType;
+    }
 
     const result = {
       info: {
@@ -53,9 +50,9 @@ module.exports = async (req, res) => {
     return res.status(200).json(result);
   } catch (e) {
     return res.status(500).json({ 
-      error: "最终调试阶段报错", 
+      error: "环境探测成功但执行逻辑失败", 
       detail: e.message,
-      stack: e.stack.split('\n')[0] // 只看报错第一行，方便定位
+      keys: Object.keys(lunar) // 这一行能帮我看到库里到底有哪些可用的名字
     });
   }
 };
