@@ -3,10 +3,16 @@ const lunar = require('lunar-javascript');
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+
   try {
     const { date } = req.query;
-    const dateStr = (date || '2026-03-28 12:00:00').replace('T', ' ').replace(/\+/g, ' ');
-    const solar = lunar.Solar.fromDate(new Date(dateStr));
+    const finalDate = (date || '2026-03-28 12:00:00').replace('T', ' ').replace(/\+/g, ' ');
+    
+    if (!lunar.Iziwei) {
+        throw new Error("模块加载失败");
+    }
+
+    const solar = lunar.Solar.fromDate(new Date(finalDate));
     const lunarDate = solar.getLunar();
     const iZhiWei = lunar.Iziwei.fromLunar(lunarDate);
     const palaces = iZhiWei.getPalaces();
@@ -20,6 +26,6 @@ module.exports = async (req, res) => {
       }))
     });
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: "排盘异常", detail: e.message });
   }
 };
