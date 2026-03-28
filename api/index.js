@@ -1,4 +1,14 @@
-const lunar = require('lunar-typescript');
+// 1. 三重保险加载：尝试直接从库的根路径或其子路径加载
+let lunar;
+try {
+    lunar = require('lunar-typescript');
+    if (Object.keys(lunar).length === 0) {
+        // 如果根路径是空的，尝试加载它的子路径（针对某些构建版本的 Vercel 优化）
+        lunar = require('lunar-typescript/dist/lunar.common.js');
+    }
+} catch (e) {
+    lunar = require('lunar-typescript');
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -6,42 +16,28 @@ module.exports = async (req, res) => {
 
   try {
     const { date, school } = req.query;
-    let dateStr = date || '2026-03-28';
-    if (dateStr.length <= 10) dateStr += ' 12:00:00';
+    let dateStr = date || '2026-03-28 12:00:00';
+    const finalDate = dateStr.replace('T', ' ').replace(/\+/g, ' ');
     
-    // 1. 历法计算
-    const d = new Date(dateStr.replace('T', ' ').replace(/\+/g, ' '));
-    const solar = lunar.Solar.fromDate(d);
+    // 2. 历法计算：不再解构，直接从大对象里翻
+    const solar = (lunar.Solar || lunar.default.Solar).fromDate(new Date(finalDate));
     const lunarDate = solar.getLunar();
 
-    // 2. 核心探测：解决 Iziwei 找不到的问题
-    // 有些版本是 Iziwei，有些是 IZiWei，有些是 ZiWei
-    const ZiWeiEngine = lunar.Iziwei || lunar.IZiWei || lunar.ZiWei || lunar.IziWei;
+    // 3. 寻找紫微引擎 (尝试所有可能的路径)
+    const Engine = lunar.Iziwei || (lunar.default && lunar.default.Iziwei) || lunar.IZiWei;
     
-    if (!ZiWeiEngine || typeof ZiWeiEngine.fromLunar !== 'function') {
-      // 最后的杀手锏：如果对象上找不到，就去库的根部直接找 fromLunar
-      throw new Error("紫微引擎未正确加载，请检查库依赖");
+    if (!Engine) {
+      throw new Error("引擎在所有已知路径中均未找到");
     }
 
-    const iZhiWei = ZiWeiEngine.fromLunar(lunarDate);
+    const iZhiWei = Engine.fromLunar(lunarDate);
     const palaces = iZhiWei.getPalaces();
 
-    // 3. 流派设置
-    const SiHua = lunar.ZiWeiSiHua || lunar.ZiweiSiHua;
-    if (SiHua) {
-        let sihuaType = 3; 
-        if (school === 'zhongzhou') sihuaType = 1;
-        if (school === 'quanshu') sihuaType = 0;
-        SiHua.TYPE = sihuaType;
-    }
-
-    // 4. 返回结果
     const result = {
       info: {
         bazi: lunarDate.getEightChar().toString(),
         wuxing: iZhiWei.getWuXing(),
-        solarDate: solar.toFullString(),
-        lunarDate: lunarDate.toFullString()
+        solarDate: solar.toFullString()
       },
       palaces: palaces.map(p => ({
         name: p.getName(),
@@ -54,11 +50,15 @@ module.exports = async (req, res) => {
 
     return res.status(200).json(result);
   } catch (e) {
-    // 这一步能帮我们看到库里到底长什么样
     return res.status(500).json({ 
-      error: "紫微引擎探测失败", 
-      message: e.message,
-      available_keys: Object.keys(lunar).filter(k => k.toLowerCase().includes('zi'))
+      error: "环境探测失败", 
+      detail: e.message,
+      // 这一行能彻底帮我分析出 Vercel 里的导出结构
+      env_debug: {
+        has_default: !!lunar.default,
+        root_keys: Object.keys(lunar),
+        default_keys: lunar.default ? Object.keys(lunar.default) : []
+      }
     });
   }
 };
