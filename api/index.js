@@ -1,26 +1,27 @@
-import { Solar, Lunar, Iziwei, ZiWeiSiHua } from 'lunar-javascript';
+// 直接通过 CDN 加载，这样 Vercel 100% 能认出这些函数
+import { Solar, Lunar, Iziwei, ZiWeiSiHua } from 'https://esm.sh/lunar-javascript?bundle';
 
 export default async function handler(req, res) {
-  // 1. 设置跨域头 (Base44 必备)
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  // 设置跨域头，确保 Base44 顺畅调用
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
-  // 处理浏览器预检
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    // 2. 获取 URL 参数：?date=2026-03-28 10:00&school=zhongzhou
     const { date, school } = req.query;
-    const dateStr = date || '2026-03-28 10:00';
     
-    const solar = Solar.fromDate(new Date(dateStr.replace('%20', ' ')));
+    // 兼容多种日期格式，如果没传日期则默认今天
+    let dateInput = date || new Date().toISOString();
+    // 把 URL 里的 T 或空格换成标准格式
+    const cleanDate = decodeURIComponent(dateInput).replace('T', ' ').replace(/\+/g, ' ');
+    
+    const dateObj = new Date(cleanDate);
+    const solar = Solar.fromDate(dateObj);
     const lunar = solar.getLunar();
 
-    // 3. 流派设置 (0全书, 1中州, 2占验, 3常规)
+    // 流派设置 (0全书, 1中州, 2占验, 3常规)
     let sihuaType = 3; 
     if (school === 'zhongzhou') sihuaType = 1;
     if (school === 'quanshu') sihuaType = 0;
@@ -29,7 +30,7 @@ export default async function handler(req, res) {
     const iZhiWei = Iziwei.fromLunar(lunar);
     const palaces = iZhiWei.getPalaces();
 
-    // 4. 构造 Base44 易读的数据格式
+    // 构造 Base44 易读的数据格式
     const result = {
       info: {
         bazi: lunar.getEightChar().toString(),
@@ -48,6 +49,10 @@ export default async function handler(req, res) {
 
     return res.status(200).json(result);
   } catch (e) {
-    return res.status(500).json({ error: "排盘异常", detail: e.message });
+    // 如果失败，返回具体的错误详情
+    return res.status(500).json({ 
+      error: "排盘逻辑执行失败", 
+      message: e.message 
+    });
   }
 }
