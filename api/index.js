@@ -1,27 +1,22 @@
-// 直接通过 CDN 加载，这样 Vercel 100% 能认出这些函数
-import { Solar, Lunar, Iziwei, ZiWeiSiHua } from 'https://esm.sh/lunar-javascript?bundle';
+const { Solar, Lunar, Iziwei, ZiWeiSiHua } = require('lunar-javascript');
 
-export default async function handler(req, res) {
-  // 设置跨域头，确保 Base44 顺畅调用
+module.exports = async (req, res) => {
+  // 设置跨域
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
     const { date, school } = req.query;
     
-    // 兼容多种日期格式，如果没传日期则默认今天
-    let dateInput = date || new Date().toISOString();
-    // 把 URL 里的 T 或空格换成标准格式
-    const cleanDate = decodeURIComponent(dateInput).replace('T', ' ').replace(/\+/g, ' ');
+    // 基础日期处理
+    let dateStr = date || '2026-03-28 12:00:00';
+    // 简单的格式清洗，防止日期报错
+    const finalDate = dateStr.replace('T', ' ').replace(/\+/g, ' ');
     
-    const dateObj = new Date(cleanDate);
-    const solar = Solar.fromDate(dateObj);
+    const solar = Solar.fromDate(new Date(finalDate));
     const lunar = solar.getLunar();
 
-    // 流派设置 (0全书, 1中州, 2占验, 3常规)
+    // 流派逻辑
     let sihuaType = 3; 
     if (school === 'zhongzhou') sihuaType = 1;
     if (school === 'quanshu') sihuaType = 0;
@@ -30,13 +25,12 @@ export default async function handler(req, res) {
     const iZhiWei = Iziwei.fromLunar(lunar);
     const palaces = iZhiWei.getPalaces();
 
-    // 构造 Base44 易读的数据格式
+    // 构造结果
     const result = {
       info: {
         bazi: lunar.getEightChar().toString(),
         wuxing: iZhiWei.getWuXing(),
-        solarDate: solar.toFullString(),
-        lunarDate: lunar.toFullString()
+        solarDate: solar.toFullString()
       },
       palaces: palaces.map(p => ({
         name: p.getName(),
@@ -49,10 +43,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json(result);
   } catch (e) {
-    // 如果失败，返回具体的错误详情
     return res.status(500).json({ 
-      error: "排盘逻辑执行失败", 
-      message: e.message 
+      error: "服务器内部算力异常", 
+      detail: e.message 
     });
   }
-}
+};
