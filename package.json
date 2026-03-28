@@ -1,5 +1,4 @@
 {
-  "type": "module",
   "dependencies": {
     "lunar-javascript": "^1.6.12"
   }
