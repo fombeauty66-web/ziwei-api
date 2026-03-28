@@ -9,23 +9,33 @@ module.exports = async (req, res) => {
     let dateStr = date || '2026-03-28';
     if (dateStr.length <= 10) dateStr += ' 12:00:00';
     
-    // 1. 使用库的绝对路径计算历法
-    const solar = lunar.Solar.fromDate(new Date(dateStr.replace('T', ' ').replace(/\+/g, ' ')));
+    // 1. 历法计算
+    const d = new Date(dateStr.replace('T', ' ').replace(/\+/g, ' '));
+    const solar = lunar.Solar.fromDate(d);
     const lunarDate = solar.getLunar();
 
-    // 2. 设置流派 (直接通过根对象设置)
-    if (lunar.ZiWeiSiHua) {
+    // 2. 核心探测：解决 Iziwei 找不到的问题
+    // 有些版本是 Iziwei，有些是 IZiWei，有些是 ZiWei
+    const ZiWeiEngine = lunar.Iziwei || lunar.IZiWei || lunar.ZiWei || lunar.IziWei;
+    
+    if (!ZiWeiEngine || typeof ZiWeiEngine.fromLunar !== 'function') {
+      // 最后的杀手锏：如果对象上找不到，就去库的根部直接找 fromLunar
+      throw new Error("紫微引擎未正确加载，请检查库依赖");
+    }
+
+    const iZhiWei = ZiWeiEngine.fromLunar(lunarDate);
+    const palaces = iZhiWei.getPalaces();
+
+    // 3. 流派设置
+    const SiHua = lunar.ZiWeiSiHua || lunar.ZiweiSiHua;
+    if (SiHua) {
         let sihuaType = 3; 
         if (school === 'zhongzhou') sihuaType = 1;
         if (school === 'quanshu') sihuaType = 0;
-        lunar.ZiWeiSiHua.TYPE = sihuaType;
+        SiHua.TYPE = sihuaType;
     }
 
-    // 3. 紫微排盘 (直接通过根对象调用 Iziwei)
-    const iZhiWei = lunar.Iziwei.fromLunar(lunarDate);
-    const palaces = iZhiWei.getPalaces();
-
-    // 4. 封装最终数据
+    // 4. 返回结果
     const result = {
       info: {
         bazi: lunarDate.getEightChar().toString(),
@@ -44,9 +54,11 @@ module.exports = async (req, res) => {
 
     return res.status(200).json(result);
   } catch (e) {
+    // 这一步能帮我们看到库里到底长什么样
     return res.status(500).json({ 
-      error: "紫微引擎最后一步配置异常", 
-      detail: e.message 
+      error: "紫微引擎探测失败", 
+      message: e.message,
+      available_keys: Object.keys(lunar).filter(k => k.toLowerCase().includes('zi'))
     });
   }
 };
